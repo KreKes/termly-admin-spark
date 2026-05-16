@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { GraduationCap, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { GraduationCap, User, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { login, getSession } from "@/lib/auth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -19,23 +21,34 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const submit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (getSession()) navigate({ to: "/" });
+  }, [navigate]);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast.error("Enter your email and password.");
+    setError(null);
+    if (!username || !password) {
+      setError("Enter your username and password.");
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      toast.success("Welcome back!");
+    try {
+      const session = await login(username.trim(), password);
+      toast.success(`Welcome back, ${session.user.first_name || session.user.username}!`);
       navigate({ to: "/" });
-    }, 600);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed. Please try again.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,14 +72,20 @@ function LoginPage() {
           </div>
 
           <form onSubmit={submit} className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email" className="text-xs font-medium text-foreground/80">Email</Label>
+              <Label htmlFor="username" className="text-xs font-medium text-foreground/80">Username</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="email" type="email" autoComplete="email"
-                  value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@school.edu.ng"
+                  id="username" type="text" autoComplete="username"
+                  value={username} onChange={(e) => setUsername(e.target.value)}
+                  placeholder="your.username"
                   className="pl-9"
                 />
               </div>
