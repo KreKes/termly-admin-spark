@@ -202,10 +202,10 @@ function ResultsPage() {
                   </TableRow>
                   <TableRow className="bg-muted/30 hover:bg-muted/30">
                     {SUBJECTS.map((sub) => (
-                      <>
-                        <TableHead key={`${sub}-ca`} className="text-center text-xs font-normal text-muted-foreground border-l border-border">CA /30</TableHead>
-                        <TableHead key={`${sub}-ex`} className="text-center text-xs font-normal text-muted-foreground">Exam /70</TableHead>
-                      </>
+                      <Fragment key={sub}>
+                        <TableHead className="text-center text-xs font-normal text-muted-foreground border-l border-border">CA /30</TableHead>
+                        <TableHead className="text-center text-xs font-normal text-muted-foreground">Exam /70</TableHead>
+                      </Fragment>
                     ))}
                   </TableRow>
                 </TableHeader>
