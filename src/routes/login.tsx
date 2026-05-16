@@ -72,14 +72,20 @@ function LoginPage() {
           </div>
 
           <form onSubmit={submit} className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email" className="text-xs font-medium text-foreground/80">Email</Label>
+              <Label htmlFor="username" className="text-xs font-medium text-foreground/80">Username</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="email" type="email" autoComplete="email"
-                  value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@school.edu.ng"
+                  id="username" type="text" autoComplete="username"
+                  value={username} onChange={(e) => setUsername(e.target.value)}
+                  placeholder="your.username"
                   className="pl-9"
                 />
               </div>
