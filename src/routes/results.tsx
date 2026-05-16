@@ -219,14 +219,14 @@ function ResultsPage() {
                       <TableRow key={s.id}>
                         <TableCell className="font-medium text-foreground">{s.name}</TableCell>
                         {SUBJECTS.map((sub) => (
-                          <>
-                            <TableCell key={`${sub}-ca`} className="text-center text-sm border-l border-border">
+                          <Fragment key={sub}>
+                            <TableCell className="text-center text-sm border-l border-border">
                               {sc[sub]?.ca ?? <span className="text-muted-foreground">—</span>}
                             </TableCell>
-                            <TableCell key={`${sub}-ex`} className="text-center text-sm">
+                            <TableCell className="text-center text-sm">
                               {sc[sub]?.exam ?? <span className="text-muted-foreground">—</span>}
                             </TableCell>
-                          </>
+                          </Fragment>
                         ))}
                         <TableCell className="text-right font-semibold text-foreground border-l border-border">
                           {total}<span className="text-muted-foreground font-normal">/{overallMax}</span>
