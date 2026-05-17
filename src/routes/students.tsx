@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +20,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -30,8 +29,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Pencil, Eye, UserRound } from "lucide-react";
+import { Search, Plus, Pencil, Eye, UserRound, Loader2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/auth";
 
 export const Route = createFileRoute("/students")({
   head: () => ({
@@ -63,14 +63,40 @@ const CLASSES = [
   "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3",
 ];
 
-const INITIAL: Student[] = [
-  { id: "1", firstName: "Chinedu", lastName: "Okeke", admissionNo: "TRM/2024/001", className: "JSS 2", gender: "Male", parentName: "Mr. Emeka Okeke", parentPhone: "+234 803 123 4567", parentEmail: "emeka.okeke@mail.com", dob: "2012-04-12", status: "Active" },
-  { id: "2", firstName: "Aisha", lastName: "Bello", admissionNo: "TRM/2024/002", className: "SSS 1", gender: "Female", parentName: "Mrs. Hadiza Bello", parentPhone: "+234 805 555 1212", parentEmail: "hadiza.b@mail.com", dob: "2010-09-22", status: "Active" },
-  { id: "3", firstName: "Tunde", lastName: "Adeyemi", admissionNo: "TRM/2024/003", className: "SSS 3", gender: "Male", parentName: "Mr. Wale Adeyemi", parentPhone: "+234 802 998 7766", parentEmail: "wale.a@mail.com", dob: "2008-01-30", status: "Active" },
-  { id: "4", firstName: "Ngozi", lastName: "Ibe", admissionNo: "TRM/2024/004", className: "JSS 1", gender: "Female", parentName: "Mrs. Chioma Ibe", parentPhone: "+234 809 222 3344", parentEmail: "chioma.ibe@mail.com", dob: "2013-07-04", status: "Active" },
-  { id: "5", firstName: "Yusuf", lastName: "Garba", admissionNo: "TRM/2024/005", className: "SSS 2", gender: "Male", parentName: "Alh. Musa Garba", parentPhone: "+234 806 777 8899", parentEmail: "m.garba@mail.com", dob: "2009-11-18", status: "Inactive" },
-  { id: "6", firstName: "Funmi", lastName: "Adesanya", admissionNo: "TRM/2023/088", className: "SSS 3", gender: "Female", parentName: "Mr. Tope Adesanya", parentPhone: "+234 807 414 5566", parentEmail: "tope.ade@mail.com", dob: "2008-03-09", status: "Graduated" },
-];
+type ApiStudent = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  admission_number: string;
+  current_class_name?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  parent_name?: string | null;
+  parent_phone?: string | null;
+  parent_email?: string | null;
+  status?: string | null;
+};
+
+function mapStudent(s: ApiStudent): Student {
+  const g = (s.gender ?? "").toString().toUpperCase();
+  const gender: "Male" | "Female" = g === "F" || g === "FEMALE" ? "Female" : "Male";
+  const st = (s.status ?? "").toString().toLowerCase();
+  const status: Status =
+    st === "graduated" ? "Graduated" : st === "inactive" ? "Inactive" : "Active";
+  return {
+    id: s.id,
+    firstName: s.first_name ?? "",
+    lastName: s.last_name ?? "",
+    admissionNo: s.admission_number ?? "",
+    className: s.current_class_name ?? "—",
+    gender,
+    parentName: s.parent_name ?? "",
+    parentPhone: s.parent_phone ?? "",
+    parentEmail: s.parent_email ?? "",
+    dob: s.date_of_birth ?? "",
+    status,
+  };
+}
 
 const empty = {
   firstName: "", lastName: "", admissionNo: "", dob: "",
@@ -80,12 +106,36 @@ const empty = {
 };
 
 function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>(INITIAL);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<Student | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const res = await apiFetch("/api/students/");
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        const list: ApiStudent[] = Array.isArray(data) ? data : (data?.results ?? []);
+        if (!cancelled) setStudents(list.map(mapStudent));
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load students");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -162,6 +212,37 @@ function StudentsPage() {
           </Button>
         </div>
 
+        {loading ? (
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <p className="text-sm">Loading students…</p>
+            </CardContent>
+          </Card>
+        ) : loadError ? (
+          <Card className="border-destructive/40 shadow-sm">
+            <CardContent className="p-8 text-center">
+              <p className="text-sm text-destructive mb-3">{loadError}</p>
+              <Button variant="outline" onClick={() => window.location.reload()}>Retry</Button>
+            </CardContent>
+          </Card>
+        ) : students.length === 0 ? (
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-12 flex flex-col items-center justify-center gap-3 text-center">
+              <div className="h-14 w-14 rounded-full bg-primary/10 text-primary grid place-items-center">
+                <UsersRound className="h-7 w-7" />
+              </div>
+              <h2 className="text-lg font-semibold text-foreground">No students enrolled yet</h2>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Add your first student to start managing classes, attendance and results.
+              </p>
+              <Button onClick={openAdd} className="bg-primary hover:bg-primary/90 mt-2">
+                <Plus className="h-4 w-4" />
+                Add Student
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-6">
             <div className="relative mb-4">
@@ -271,6 +352,7 @@ function StudentsPage() {
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Add / Edit dialog */}
