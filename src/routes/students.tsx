@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +20,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -30,8 +29,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Pencil, Eye, UserRound } from "lucide-react";
+import { Search, Plus, Pencil, Eye, UserRound, Loader2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/auth";
 
 export const Route = createFileRoute("/students")({
   head: () => ({
