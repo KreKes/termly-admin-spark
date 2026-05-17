@@ -63,14 +63,40 @@ const CLASSES = [
   "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3",
 ];
 
-const INITIAL: Student[] = [
-  { id: "1", firstName: "Chinedu", lastName: "Okeke", admissionNo: "TRM/2024/001", className: "JSS 2", gender: "Male", parentName: "Mr. Emeka Okeke", parentPhone: "+234 803 123 4567", parentEmail: "emeka.okeke@mail.com", dob: "2012-04-12", status: "Active" },
-  { id: "2", firstName: "Aisha", lastName: "Bello", admissionNo: "TRM/2024/002", className: "SSS 1", gender: "Female", parentName: "Mrs. Hadiza Bello", parentPhone: "+234 805 555 1212", parentEmail: "hadiza.b@mail.com", dob: "2010-09-22", status: "Active" },
-  { id: "3", firstName: "Tunde", lastName: "Adeyemi", admissionNo: "TRM/2024/003", className: "SSS 3", gender: "Male", parentName: "Mr. Wale Adeyemi", parentPhone: "+234 802 998 7766", parentEmail: "wale.a@mail.com", dob: "2008-01-30", status: "Active" },
-  { id: "4", firstName: "Ngozi", lastName: "Ibe", admissionNo: "TRM/2024/004", className: "JSS 1", gender: "Female", parentName: "Mrs. Chioma Ibe", parentPhone: "+234 809 222 3344", parentEmail: "chioma.ibe@mail.com", dob: "2013-07-04", status: "Active" },
-  { id: "5", firstName: "Yusuf", lastName: "Garba", admissionNo: "TRM/2024/005", className: "SSS 2", gender: "Male", parentName: "Alh. Musa Garba", parentPhone: "+234 806 777 8899", parentEmail: "m.garba@mail.com", dob: "2009-11-18", status: "Inactive" },
-  { id: "6", firstName: "Funmi", lastName: "Adesanya", admissionNo: "TRM/2023/088", className: "SSS 3", gender: "Female", parentName: "Mr. Tope Adesanya", parentPhone: "+234 807 414 5566", parentEmail: "tope.ade@mail.com", dob: "2008-03-09", status: "Graduated" },
-];
+type ApiStudent = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  admission_number: string;
+  current_class_name?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  parent_name?: string | null;
+  parent_phone?: string | null;
+  parent_email?: string | null;
+  status?: string | null;
+};
+
+function mapStudent(s: ApiStudent): Student {
+  const g = (s.gender ?? "").toString().toUpperCase();
+  const gender: "Male" | "Female" = g === "F" || g === "FEMALE" ? "Female" : "Male";
+  const st = (s.status ?? "").toString().toLowerCase();
+  const status: Status =
+    st === "graduated" ? "Graduated" : st === "inactive" ? "Inactive" : "Active";
+  return {
+    id: s.id,
+    firstName: s.first_name ?? "",
+    lastName: s.last_name ?? "",
+    admissionNo: s.admission_number ?? "",
+    className: s.current_class_name ?? "—",
+    gender,
+    parentName: s.parent_name ?? "",
+    parentPhone: s.parent_phone ?? "",
+    parentEmail: s.parent_email ?? "",
+    dob: s.date_of_birth ?? "",
+    status,
+  };
+}
 
 const empty = {
   firstName: "", lastName: "", admissionNo: "", dob: "",
