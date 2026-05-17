@@ -20,14 +20,24 @@ export type Session = {
   refresh?: string;
 };
 
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
+const listeners = new Set<() => void>();ID
+let cachedRaw: string | null = null;
+let cachedSession: Session | null = null;
+
+const emit = () => {
+  // Invalidate cache so next getSession re-reads from storage
+  cachedRaw = null;
+  listeners.forEach((l) => l());
+};
 
 export function getSession(): Session | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
+    if (raw === cachedRaw) return cachedSession;
+    cachedRaw = raw;
+    cachedSession = raw ? (JSON.parse(raw) as Session) : null;
+    return cachedSession;
   } catch {
     return null;
   }
