@@ -352,6 +352,7 @@ function StudentsPage() {
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Add / Edit dialog */}
