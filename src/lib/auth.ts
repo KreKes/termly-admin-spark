@@ -106,9 +106,11 @@ export async function login(username: string, password: string): Promise<Session
     throw new Error(typeof message === "string" ? message : "Login failed");
   }
 
-  const user = payload?.user ?? {};
   const token = payload?.access ?? payload?.access_token ?? payload?.token ?? payload?.key;
   const refresh = payload?.refresh ?? payload?.refresh_token;
+  // User fields may be nested under `user` or returned at the top level.
+  const { access, access_token, token: _t, key, refresh: _r, refresh_token, user: nestedUser, ...rest } = payload ?? {};
+  const user = { ...(rest as object), ...(nestedUser ?? {}) };
 
   if (!token) {
     throw new Error("Login response did not include an access token.");
