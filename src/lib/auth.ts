@@ -20,7 +20,7 @@ export type Session = {
   refresh?: string;
 };
 
-const listeners = new Set<() => void>();ID
+const listeners = new Set<() => void>();
 let cachedRaw: string | null = null;
 let cachedSession: Session | null = null;
 
