@@ -106,12 +106,36 @@ const empty = {
 };
 
 function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>(INITIAL);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [viewing, setViewing] = useState<Student | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const res = await apiFetch("/api/students/");
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        const list: ApiStudent[] = Array.isArray(data) ? data : (data?.results ?? []);
+        if (!cancelled) setStudents(list.map(mapStudent));
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load students");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
