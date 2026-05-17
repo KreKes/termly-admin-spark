@@ -212,6 +212,37 @@ function StudentsPage() {
           </Button>
         </div>
 
+        {loading ? (
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <p className="text-sm">Loading students…</p>
+            </CardContent>
+          </Card>
+        ) : loadError ? (
+          <Card className="border-destructive/40 shadow-sm">
+            <CardContent className="p-8 text-center">
+              <p className="text-sm text-destructive mb-3">{loadError}</p>
+              <Button variant="outline" onClick={() => window.location.reload()}>Retry</Button>
+            </CardContent>
+          </Card>
+        ) : students.length === 0 ? (
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-12 flex flex-col items-center justify-center gap-3 text-center">
+              <div className="h-14 w-14 rounded-full bg-primary/10 text-primary grid place-items-center">
+                <UsersRound className="h-7 w-7" />
+              </div>
+              <h2 className="text-lg font-semibold text-foreground">No students enrolled yet</h2>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Add your first student to start managing classes, attendance and results.
+              </p>
+              <Button onClick={openAdd} className="bg-primary hover:bg-primary/90 mt-2">
+                <Plus className="h-4 w-4" />
+                Add Student
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-6">
             <div className="relative mb-4">
