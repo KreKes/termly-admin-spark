@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { AppShell } from "@/components/app-shell";
@@ -17,9 +17,10 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import {
-  CalendarIcon, Save, CheckCircle2, XCircle, Clock, FileText, Users,
+  CalendarIcon, Save, CheckCircle2, XCircle, Clock, Users, Loader2, UsersRound,
 } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/auth";
 
 export const Route = createFileRoute("/attendance")({
   head: () => ({
@@ -35,23 +36,6 @@ type Status = "Present" | "Absent" | "Late" | "Excused";
 
 type Roster = { id: string; firstName: string; lastName: string; admissionNo: string; className: string };
 
-const CLASSES = ["JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"];
-
-const ROSTER: Roster[] = [
-  { id: "1", firstName: "Chinedu", lastName: "Okeke", admissionNo: "TRM/2024/001", className: "JSS 2" },
-  { id: "2", firstName: "Aisha", lastName: "Bello", admissionNo: "TRM/2024/002", className: "SSS 1" },
-  { id: "3", firstName: "Tunde", lastName: "Adeyemi", admissionNo: "TRM/2024/003", className: "SSS 3" },
-  { id: "4", firstName: "Ngozi", lastName: "Ibe", admissionNo: "TRM/2024/004", className: "JSS 1" },
-  { id: "5", firstName: "Yusuf", lastName: "Garba", admissionNo: "TRM/2024/005", className: "SSS 2" },
-  { id: "6", firstName: "Funmi", lastName: "Adesanya", admissionNo: "TRM/2023/088", className: "SSS 3" },
-  { id: "7", firstName: "Kemi", lastName: "Ojo", admissionNo: "TRM/2024/006", className: "JSS 2" },
-  { id: "8", firstName: "Ibrahim", lastName: "Sani", admissionNo: "TRM/2024/007", className: "JSS 2" },
-  { id: "9", firstName: "Chiamaka", lastName: "Nwosu", admissionNo: "TRM/2024/008", className: "JSS 2" },
-  { id: "10", firstName: "David", lastName: "Eze", admissionNo: "TRM/2024/009", className: "SSS 1" },
-  { id: "11", firstName: "Amina", lastName: "Lawal", admissionNo: "TRM/2024/010", className: "SSS 1" },
-  { id: "12", firstName: "Segun", lastName: "Falade", admissionNo: "TRM/2024/011", className: "JSS 1" },
-];
-
 const STATUSES: Status[] = ["Present", "Absent", "Late", "Excused"];
 
 const statusStyles: Record<Status, string> = {
@@ -61,20 +45,104 @@ const statusStyles: Record<Status, string> = {
   Excused: "bg-primary/10 text-primary border-primary/30 hover:bg-primary/15",
 };
 
+const toArray = (data: unknown): any[] => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object" && Array.isArray((data as any).results)) return (data as any).results;
+  return [];
+};
+
+const normalizeStatus = (s: unknown): Status | undefined => {
+  const v = String(s ?? "").toLowerCase();
+  if (v.startsWith("p")) return "Present";
+  if (v.startsWith("a")) return "Absent";
+  if (v.startsWith("l")) return "Late";
+  if (v.startsWith("e")) return "Excused";
+  return undefined;
+};
+
 function AttendancePage() {
   const [date, setDate] = useState<Date>(new Date());
-  const [className, setClassName] = useState<string>("JSS 2");
+  const [className, setClassName] = useState<string>("");
   const [calOpen, setCalOpen] = useState(false);
 
-  const roster = useMemo(
-    () => ROSTER.filter((s) => s.className === className),
-    [className],
-  );
+  const [allStudents, setAllStudents] = useState<Roster[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(true);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
 
-  // attendance keyed by `${dateISO}|${studentId}` so it persists across class switches
   const [marks, setMarks] = useState<Record<string, Status>>({});
+  const [loadingAtt, setLoadingAtt] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const dateKey = format(date, "yyyy-MM-dd");
   const keyFor = (id: string) => `${dateKey}|${id}`;
+
+  // Load students once
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingStudents(true);
+      setStudentsError(null);
+      try {
+        const res = await apiFetch("/api/students/");
+        if (!res.ok) throw new Error(`Failed to load students (${res.status})`);
+        const data = await res.json();
+        if (cancelled) return;
+        const roster: Roster[] = toArray(data).map((s: any) => ({
+          id: String(s.id ?? ""),
+          firstName: s.first_name ?? (s.full_name ?? s.name ?? "").split(" ")[0] ?? "",
+          lastName: s.last_name ?? (s.full_name ?? s.name ?? "").split(" ").slice(1).join(" "),
+          admissionNo: s.admission_number ?? s.admission_no ?? "—",
+          className: s.current_class_name ?? s.class_name ?? "—",
+        }));
+        setAllStudents(roster);
+        const classes = Array.from(new Set(roster.map((r) => r.className).filter((c) => c && c !== "—")));
+        if (classes.length && !className) setClassName(classes[0]);
+      } catch (e) {
+        if (!cancelled) setStudentsError(e instanceof Error ? e.message : "Failed to load students");
+      } finally {
+        if (!cancelled) setLoadingStudents(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const classes = useMemo(
+    () => Array.from(new Set(allStudents.map((s) => s.className).filter((c) => c && c !== "—"))),
+    [allStudents],
+  );
+
+  const roster = useMemo(
+    () => allStudents.filter((s) => s.className === className),
+    [allStudents, className],
+  );
+
+  // Load attendance for date+class
+  useEffect(() => {
+    if (!className) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingAtt(true);
+      try {
+        const res = await apiFetch(`/api/attendance/?date=${dateKey}&class_name=${encodeURIComponent(className)}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (cancelled) return;
+        const next: Record<string, Status> = {};
+        toArray(data).forEach((r: any) => {
+          const sid = String(r.student?.id ?? r.student_id ?? r.student ?? "");
+          const st = normalizeStatus(r.status);
+          if (sid && st) next[`${dateKey}|${sid}`] = st;
+        });
+        setMarks((m) => ({ ...m, ...next }));
+      } catch {
+        // silent: empty state shows blank selectors
+      } finally {
+        if (!cancelled) setLoadingAtt(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dateKey, className]);
 
   const setStatus = (id: string, status: Status) =>
     setMarks((m) => ({ ...m, [keyFor(id)]: status }));
@@ -87,6 +155,7 @@ function AttendancePage() {
       else c.Unmarked++;
     }
     return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roster, marks, dateKey]);
 
   const markAllPresent = () => {
@@ -98,12 +167,40 @@ function AttendancePage() {
     toast.success("All marked Present.");
   };
 
-  const save = () => {
+  const save = async () => {
     if (counts.Unmarked > 0) {
       toast.warning(`${counts.Unmarked} student(s) still unmarked.`);
       return;
     }
-    toast.success(`Attendance saved for ${className} · ${format(date, "PPP")}.`);
+    setSaving(true);
+    const records = roster.map((s) => ({
+      student: s.id,
+      date: dateKey,
+      status: marks[keyFor(s.id)].toLowerCase(),
+    }));
+    try {
+      // Try bulk first
+      let res = await apiFetch("/api/attendance/", {
+        method: "POST",
+        body: JSON.stringify(records),
+      });
+      if (!res.ok && res.status >= 400 && res.status < 500) {
+        // Fallback to per-record posts
+        const results = await Promise.all(
+          records.map((r) =>
+            apiFetch("/api/attendance/", { method: "POST", body: JSON.stringify(r) }),
+          ),
+        );
+        if (results.some((r) => !r.ok)) throw new Error("Some records failed to save");
+      } else if (!res.ok) {
+        throw new Error(`Failed (${res.status})`);
+      }
+      toast.success(`Attendance saved for ${className} · ${format(date, "PPP")}.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save attendance");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -114,8 +211,12 @@ function AttendancePage() {
             <h1 className="text-2xl font-bold text-foreground">Attendance</h1>
             <p className="text-sm text-muted-foreground">Mark daily attendance by class.</p>
           </div>
-          <Button onClick={save} className="bg-primary hover:bg-primary/90 self-start sm:self-auto">
-            <Save className="h-4 w-4" />
+          <Button
+            onClick={save}
+            disabled={saving || roster.length === 0}
+            className="bg-primary hover:bg-primary/90 self-start sm:self-auto"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Attendance
           </Button>
         </div>
@@ -151,10 +252,10 @@ function AttendancePage() {
 
               <div className="flex flex-col gap-1.5">
                 <Label className="text-xs font-medium text-foreground/80">Class</Label>
-                <Select value={className} onValueChange={setClassName}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select value={className} onValueChange={setClassName} disabled={classes.length === 0}>
+                  <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
                   <SelectContent>
-                    {CLASSES.map((c) => (
+                    {classes.map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
                   </SelectContent>
@@ -177,7 +278,7 @@ function AttendancePage() {
           <CardContent className="p-4 sm:p-6">
             <div className="flex items-center justify-between mb-4 gap-3">
               <h2 className="text-base font-semibold text-foreground">
-                {className} <span className="text-muted-foreground font-normal">· {format(date, "EEE, MMM d")}</span>
+                {className || "—"} <span className="text-muted-foreground font-normal">· {format(date, "EEE, MMM d")}</span>
               </h2>
               <Button size="sm" variant="outline" onClick={markAllPresent} disabled={roster.length === 0}>
                 <CheckCircle2 className="h-3.5 w-3.5" />
@@ -185,84 +286,109 @@ function AttendancePage() {
               </Button>
             </div>
 
-            {/* Desktop */}
-            <div className="hidden md:block rounded-lg border border-border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50 hover:bg-muted/50">
-                    <TableHead>Name</TableHead>
-                    <TableHead>Admission Number</TableHead>
-                    <TableHead className="w-[260px]">Attendance Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            {loadingStudents ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading students…
+              </div>
+            ) : studentsError ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-destructive mb-3">{studentsError}</p>
+              </div>
+            ) : allStudents.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="mx-auto h-12 w-12 rounded-full bg-muted grid place-items-center mb-3">
+                  <UsersRound className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="font-medium text-foreground">No students enrolled yet</p>
+                <p className="text-sm text-muted-foreground">Add students to mark attendance.</p>
+              </div>
+            ) : (
+              <>
+                {loadingAtt && (
+                  <p className="text-xs text-muted-foreground mb-2 inline-flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Loading attendance…
+                  </p>
+                )}
+                {/* Desktop */}
+                <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead>Name</TableHead>
+                        <TableHead>Admission Number</TableHead>
+                        <TableHead className="w-[260px]">Attendance Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {roster.map((s) => {
+                        const current = marks[keyFor(s.id)];
+                        return (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-medium text-foreground">{s.firstName} {s.lastName}</TableCell>
+                            <TableCell className="text-muted-foreground">{s.admissionNo}</TableCell>
+                            <TableCell>
+                              <Select value={current ?? ""} onValueChange={(v) => setStatus(s.id, v as Status)}>
+                                <SelectTrigger className={cn("h-9", current && statusStyles[current])}>
+                                  <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {STATUSES.map((st) => (
+                                    <SelectItem key={st} value={st}>
+                                      <span className="inline-flex items-center gap-2">
+                                        <StatusDot status={st} /> {st}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {roster.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center text-muted-foreground py-10">
+                            No students in this class yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile */}
+                <div className="md:hidden space-y-3">
                   {roster.map((s) => {
                     const current = marks[keyFor(s.id)];
                     return (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-medium text-foreground">{s.firstName} {s.lastName}</TableCell>
-                        <TableCell className="text-muted-foreground">{s.admissionNo}</TableCell>
-                        <TableCell>
-                          <Select value={current ?? ""} onValueChange={(v) => setStatus(s.id, v as Status)}>
-                            <SelectTrigger className={cn("h-9", current && statusStyles[current])}>
-                              <SelectValue placeholder="Select status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUSES.map((st) => (
-                                <SelectItem key={st} value={st}>
-                                  <span className="inline-flex items-center gap-2">
-                                    <StatusDot status={st} /> {st}
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                      </TableRow>
+                      <div key={s.id} className="rounded-lg border border-border p-4">
+                        <div className="mb-3">
+                          <p className="font-medium text-foreground">{s.firstName} {s.lastName}</p>
+                          <p className="text-xs text-muted-foreground">{s.admissionNo}</p>
+                        </div>
+                        <Select value={current ?? ""} onValueChange={(v) => setStatus(s.id, v as Status)}>
+                          <SelectTrigger className={cn("h-9", current && statusStyles[current])}>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUSES.map((st) => (
+                              <SelectItem key={st} value={st}>
+                                <span className="inline-flex items-center gap-2">
+                                  <StatusDot status={st} /> {st}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     );
                   })}
                   {roster.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-10">
-                        No students in this class yet.
-                      </TableCell>
-                    </TableRow>
+                    <p className="text-center text-sm text-muted-foreground py-10">No students in this class yet.</p>
                   )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile */}
-            <div className="md:hidden space-y-3">
-              {roster.map((s) => {
-                const current = marks[keyFor(s.id)];
-                return (
-                  <div key={s.id} className="rounded-lg border border-border p-4">
-                    <div className="mb-3">
-                      <p className="font-medium text-foreground">{s.firstName} {s.lastName}</p>
-                      <p className="text-xs text-muted-foreground">{s.admissionNo}</p>
-                    </div>
-                    <Select value={current ?? ""} onValueChange={(v) => setStatus(s.id, v as Status)}>
-                      <SelectTrigger className={cn("h-9", current && statusStyles[current])}>
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUSES.map((st) => (
-                          <SelectItem key={st} value={st}>
-                            <span className="inline-flex items-center gap-2">
-                              <StatusDot status={st} /> {st}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                );
-              })}
-              {roster.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground py-10">No students in this class yet.</p>
-              )}
-            </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -309,5 +435,3 @@ function StatusDot({ status }: { status: Status }) {
   };
   return <span className={cn("h-2 w-2 rounded-full", map[status])} />;
 }
-
-void FileText;

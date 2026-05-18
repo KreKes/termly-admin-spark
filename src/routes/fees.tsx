@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,8 +20,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Receipt, Banknote, CreditCard, ArrowLeftRight } from "lucide-react";
+import { Search, Plus, Receipt, Banknote, CreditCard, ArrowLeftRight, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/auth";
 
 export const Route = createFileRoute("/fees")({
   head: () => ({
@@ -45,39 +46,79 @@ type Payment = {
   receiptNo: string;
   method: Method;
   status: PayStatus;
-  notes?: string;
 };
 
-const CLASSES = ["JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"];
+type FeeStructure = {
+  id: string;
+  className: string;
+  tuition: number;
+  boarding: number;
+  books: number;
+  uniform: number;
+};
 
-const STUDENTS = [
-  { name: "Chinedu Okeke", className: "JSS 2" },
-  { name: "Aisha Bello", className: "SSS 1" },
-  { name: "Tunde Adeyemi", className: "SSS 3" },
-  { name: "Ngozi Ibe", className: "JSS 1" },
-  { name: "Yusuf Garba", className: "SSS 2" },
-  { name: "Funmi Adesanya", className: "SSS 3" },
-];
-
-const INITIAL_PAYMENTS: Payment[] = [
-  { id: "1", student: "Chinedu Okeke", className: "JSS 2", amount: 150000, date: "2026-05-14", receiptNo: "RCP-00231", method: "Transfer", status: "Paid" },
-  { id: "2", student: "Aisha Bello", className: "SSS 1", amount: 90000, date: "2026-05-13", receiptNo: "RCP-00230", method: "Cash", status: "Partial" },
-  { id: "3", student: "Ngozi Ibe", className: "JSS 1", amount: 120000, date: "2026-05-12", receiptNo: "RCP-00229", method: "Transfer", status: "Paid" },
-  { id: "4", student: "Tunde Adeyemi", className: "SSS 3", amount: 75000, date: "2026-05-11", receiptNo: "RCP-00228", method: "Card", status: "Partial" },
-  { id: "5", student: "Funmi Adesanya", className: "SSS 3", amount: 200000, date: "2026-05-10", receiptNo: "RCP-00227", method: "Transfer", status: "Paid" },
-];
-
-const FEE_STRUCTURE = [
-  { className: "JSS 1", tuition: 120000, boarding: 80000, books: 15000, uniform: 12000 },
-  { className: "JSS 2", tuition: 130000, boarding: 80000, books: 16000, uniform: 12000 },
-  { className: "JSS 3", tuition: 140000, boarding: 80000, books: 17000, uniform: 12000 },
-  { className: "SSS 1", tuition: 160000, boarding: 90000, books: 20000, uniform: 14000 },
-  { className: "SSS 2", tuition: 170000, boarding: 90000, books: 20000, uniform: 14000 },
-  { className: "SSS 3", tuition: 180000, boarding: 90000, books: 22000, uniform: 14000 },
-];
+type ApiStudent = {
+  id?: number | string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  name?: string;
+  current_class_name?: string;
+  class_name?: string;
+};
 
 const naira = (n: number) =>
-  "₦" + n.toLocaleString("en-NG", { minimumFractionDigits: 0 });
+  "₦" + (Number(n) || 0).toLocaleString("en-NG", { minimumFractionDigits: 0 });
+
+const toArray = (data: unknown): any[] => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object" && Array.isArray((data as any).results)) return (data as any).results;
+  return [];
+};
+
+const normalizeMethod = (m: unknown): Method => {
+  const s = String(m ?? "").toLowerCase();
+  if (s.includes("cash")) return "Cash";
+  if (s.includes("card")) return "Card";
+  return "Transfer";
+};
+
+const normalizeStatus = (s: unknown, amount: number, balance?: number): PayStatus => {
+  const v = String(s ?? "").toLowerCase();
+  if (v.includes("paid") || v === "completed" || v === "success") return "Paid";
+  if (v.includes("partial")) return "Partial";
+  if (v.includes("pending")) return "Pending";
+  if (typeof balance === "number") {
+    if (balance <= 0) return "Paid";
+    if (balance < amount) return "Partial";
+    return "Pending";
+  }
+  return "Paid";
+};
+
+const mapPayment = (p: any): Payment => {
+  const amount = Number(p.amount ?? p.amount_paid ?? p.total ?? 0);
+  return {
+    id: String(p.id ?? crypto.randomUUID()),
+    student: p.student_name ?? p.student?.full_name ?? p.student?.name ??
+      [p.student?.first_name, p.student?.last_name].filter(Boolean).join(" ") ?? "—",
+    className: p.class_name ?? p.student_class ?? p.student?.current_class_name ?? "—",
+    amount,
+    date: (p.payment_date ?? p.date ?? p.created_at ?? "").toString().slice(0, 10),
+    receiptNo: p.receipt_no ?? p.receipt_number ?? p.reference ?? `RCP-${String(p.id ?? "").padStart(5, "0")}`,
+    method: normalizeMethod(p.method ?? p.payment_method),
+    status: normalizeStatus(p.status, amount, p.balance != null ? Number(p.balance) : undefined),
+  };
+};
+
+const mapFeeStructure = (f: any): FeeStructure => ({
+  id: String(f.id ?? f.class_name ?? crypto.randomUUID()),
+  className: f.class_name ?? f.className ?? f.name ?? "—",
+  tuition: Number(f.tuition ?? f.tuition_fee ?? 0),
+  boarding: Number(f.boarding ?? f.boarding_fee ?? 0),
+  books: Number(f.books ?? f.books_fee ?? 0),
+  uniform: Number(f.uniform ?? f.uniform_fee ?? 0),
+});
 
 const emptyForm = {
   student: "",
@@ -87,46 +128,113 @@ const emptyForm = {
 };
 
 function FeesPage() {
-  const [payments, setPayments] = useState<Payment[]>(INITIAL_PAYMENTS);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [structures, setStructures] = useState<FeeStructure[]>([]);
+  const [students, setStudents] = useState<{ id: string; name: string; className: string }[]>([]);
+  const [loadingPay, setLoadingPay] = useState(true);
+  const [loadingStruct, setLoadingStruct] = useState(true);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [structError, setStructError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const loadPayments = async () => {
+    setLoadingPay(true);
+    setPayError(null);
+    try {
+      const res = await apiFetch("/api/payments/");
+      if (!res.ok) throw new Error(`Failed to load payments (${res.status})`);
+      const data = await res.json();
+      setPayments(toArray(data).map(mapPayment));
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "Failed to load payments");
+    } finally {
+      setLoadingPay(false);
+    }
+  };
+
+  const loadStructures = async () => {
+    setLoadingStruct(true);
+    setStructError(null);
+    try {
+      const res = await apiFetch("/api/fee-structures/");
+      if (!res.ok) throw new Error(`Failed to load fee structures (${res.status})`);
+      const data = await res.json();
+      setStructures(toArray(data).map(mapFeeStructure));
+    } catch (e) {
+      setStructError(e instanceof Error ? e.message : "Failed to load fee structures");
+    } finally {
+      setLoadingStruct(false);
+    }
+  };
+
+  const loadStudents = async () => {
+    try {
+      const res = await apiFetch("/api/students/");
+      if (!res.ok) return;
+      const data = await res.json();
+      setStudents(
+        toArray(data).map((s: ApiStudent) => ({
+          id: String(s.id ?? ""),
+          name: s.full_name ?? s.name ?? [s.first_name, s.last_name].filter(Boolean).join(" ") ?? "—",
+          className: s.current_class_name ?? s.class_name ?? "—",
+        })),
+      );
+    } catch {
+      // optional
+    }
+  };
+
+  useEffect(() => {
+    loadPayments();
+    loadStructures();
+    loadStudents();
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return payments;
     return payments.filter(
-      (p) =>
-        p.student.toLowerCase().includes(q) ||
-        p.receiptNo.toLowerCase().includes(q),
+      (p) => p.student.toLowerCase().includes(q) || p.receiptNo.toLowerCase().includes(q),
     );
   }, [payments, query]);
 
   const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
 
-  const save = (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = Number(form.amount);
     if (!form.student || !amt || amt <= 0) {
       toast.error("Select a student and enter a valid amount.");
       return;
     }
-    const student = STUDENTS.find((s) => s.name === form.student);
-    const next: Payment = {
-      id: crypto.randomUUID(),
-      student: form.student,
-      className: student?.className ?? "—",
-      amount: amt,
-      date: new Date().toISOString().slice(0, 10),
-      receiptNo: "RCP-" + String(232 + payments.length - INITIAL_PAYMENTS.length).padStart(5, "0"),
-      method: form.method,
-      status: "Paid",
-      notes: form.notes,
-    };
-    setPayments((arr) => [next, ...arr]);
-    toast.success("Payment recorded.");
-    setForm(emptyForm);
-    setOpen(false);
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/payments/", {
+        method: "POST",
+        body: JSON.stringify({
+          student: form.student,
+          amount: amt,
+          method: form.method.toLowerCase(),
+          notes: form.notes,
+          payment_date: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || `Failed (${res.status})`);
+      }
+      toast.success("Payment recorded.");
+      setForm(emptyForm);
+      setOpen(false);
+      loadPayments();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to record payment");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const statusStyles: Record<PayStatus, string> = {
@@ -176,74 +284,98 @@ function FeesPage() {
                   />
                 </div>
 
-                {/* Desktop */}
-                <div className="hidden md:block rounded-lg border border-border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50 hover:bg-muted/50">
-                        <TableHead>Student Name</TableHead>
-                        <TableHead>Class</TableHead>
-                        <TableHead>Amount Paid</TableHead>
-                        <TableHead>Payment Date</TableHead>
-                        <TableHead>Receipt No.</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                {loadingPay ? (
+                  <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading payments…
+                  </div>
+                ) : payError ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-destructive mb-3">{payError}</p>
+                    <Button variant="outline" size="sm" onClick={loadPayments}>Retry</Button>
+                  </div>
+                ) : payments.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="mx-auto h-12 w-12 rounded-full bg-muted grid place-items-center mb-3">
+                      <Wallet className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <p className="font-medium text-foreground">No payments recorded yet</p>
+                    <p className="text-sm text-muted-foreground mb-4">Record your first fee payment to get started.</p>
+                    <Button onClick={() => setOpen(true)} className="bg-primary hover:bg-primary/90">
+                      <Plus className="h-4 w-4" /> Record Payment
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Desktop */}
+                    <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                            <TableHead>Student Name</TableHead>
+                            <TableHead>Class</TableHead>
+                            <TableHead>Amount Paid</TableHead>
+                            <TableHead>Payment Date</TableHead>
+                            <TableHead>Receipt No.</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filtered.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell className="font-medium text-foreground">{p.student}</TableCell>
+                              <TableCell>{p.className}</TableCell>
+                              <TableCell className="font-semibold text-foreground">{naira(p.amount)}</TableCell>
+                              <TableCell className="text-muted-foreground">{p.date}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Receipt className="h-3.5 w-3.5" /> {p.receiptNo}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={statusStyles[p.status]}>
+                                  {p.status}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {filtered.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                                No payments match your search.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Mobile */}
+                    <div className="md:hidden space-y-3">
                       {filtered.map((p) => (
-                        <TableRow key={p.id}>
-                          <TableCell className="font-medium text-foreground">{p.student}</TableCell>
-                          <TableCell>{p.className}</TableCell>
-                          <TableCell className="font-semibold text-foreground">{naira(p.amount)}</TableCell>
-                          <TableCell className="text-muted-foreground">{p.date}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            <span className="inline-flex items-center gap-1.5">
-                              <Receipt className="h-3.5 w-3.5" /> {p.receiptNo}
+                        <div key={p.id} className="rounded-lg border border-border p-4">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="min-w-0">
+                              <p className="font-medium text-foreground truncate">{p.student}</p>
+                              <p className="text-xs text-muted-foreground">{p.className} · {p.date}</p>
+                            </div>
+                            <Badge variant="outline" className={statusStyles[p.status]}>{p.status}</Badge>
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-base font-semibold text-foreground">{naira(p.amount)}</span>
+                            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                              {methodIcon[p.method]} {p.receiptNo}
                             </span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={statusStyles[p.status]}>
-                              {p.status}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
+                          </div>
+                        </div>
                       ))}
                       {filtered.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
-                            No payments match your search.
-                          </TableCell>
-                        </TableRow>
+                        <p className="text-center text-sm text-muted-foreground py-10">
+                          No payments match your search.
+                        </p>
                       )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Mobile */}
-                <div className="md:hidden space-y-3">
-                  {filtered.map((p) => (
-                    <div key={p.id} className="rounded-lg border border-border p-4">
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">{p.student}</p>
-                          <p className="text-xs text-muted-foreground">{p.className} · {p.date}</p>
-                        </div>
-                        <Badge variant="outline" className={statusStyles[p.status]}>{p.status}</Badge>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-base font-semibold text-foreground">{naira(p.amount)}</span>
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          {methodIcon[p.method]} {p.receiptNo}
-                        </span>
-                      </div>
                     </div>
-                  ))}
-                  {filtered.length === 0 && (
-                    <p className="text-center text-sm text-muted-foreground py-10">
-                      No payments match your search.
-                    </p>
-                  )}
-                </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -252,38 +384,58 @@ function FeesPage() {
             <Card className="border-border/70 shadow-sm">
               <CardContent className="p-4 sm:p-6">
                 <div className="mb-4">
-                  <h2 className="text-base font-semibold text-foreground">Fee Structure · Term 3, 2025/26</h2>
+                  <h2 className="text-base font-semibold text-foreground">Fee Structure</h2>
                   <p className="text-sm text-muted-foreground">Amounts charged per student per class per term (in Naira).</p>
                 </div>
-                <div className="rounded-lg border border-border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50 hover:bg-muted/50">
-                        <TableHead>Class</TableHead>
-                        <TableHead className="text-right">Tuition</TableHead>
-                        <TableHead className="text-right">Boarding</TableHead>
-                        <TableHead className="text-right">Books</TableHead>
-                        <TableHead className="text-right">Uniform</TableHead>
-                        <TableHead className="text-right">Total / Term</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {FEE_STRUCTURE.map((f) => {
-                        const total = f.tuition + f.boarding + f.books + f.uniform;
-                        return (
-                          <TableRow key={f.className}>
-                            <TableCell className="font-medium text-foreground">{f.className}</TableCell>
-                            <TableCell className="text-right">{naira(f.tuition)}</TableCell>
-                            <TableCell className="text-right">{naira(f.boarding)}</TableCell>
-                            <TableCell className="text-right">{naira(f.books)}</TableCell>
-                            <TableCell className="text-right">{naira(f.uniform)}</TableCell>
-                            <TableCell className="text-right font-semibold text-primary">{naira(total)}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+
+                {loadingStruct ? (
+                  <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading fee structures…
+                  </div>
+                ) : structError ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-destructive mb-3">{structError}</p>
+                    <Button variant="outline" size="sm" onClick={loadStructures}>Retry</Button>
+                  </div>
+                ) : structures.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="mx-auto h-12 w-12 rounded-full bg-muted grid place-items-center mb-3">
+                      <Receipt className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <p className="font-medium text-foreground">No fee structures defined yet</p>
+                    <p className="text-sm text-muted-foreground">Add fee structures from your admin to see them here.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableHead>Class</TableHead>
+                          <TableHead className="text-right">Tuition</TableHead>
+                          <TableHead className="text-right">Boarding</TableHead>
+                          <TableHead className="text-right">Books</TableHead>
+                          <TableHead className="text-right">Uniform</TableHead>
+                          <TableHead className="text-right">Total / Term</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {structures.map((f) => {
+                          const total = f.tuition + f.boarding + f.books + f.uniform;
+                          return (
+                            <TableRow key={f.id}>
+                              <TableCell className="font-medium text-foreground">{f.className}</TableCell>
+                              <TableCell className="text-right">{naira(f.tuition)}</TableCell>
+                              <TableCell className="text-right">{naira(f.boarding)}</TableCell>
+                              <TableCell className="text-right">{naira(f.books)}</TableCell>
+                              <TableCell className="text-right">{naira(f.uniform)}</TableCell>
+                              <TableCell className="text-right font-semibold text-primary">{naira(total)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -298,15 +450,23 @@ function FeesPage() {
           </DialogHeader>
           <form onSubmit={save} className="space-y-4 pt-2">
             <div className="flex flex-col gap-1.5">
-              <Label className="text-xs font-medium text-foreground/80">Student Name <span className="text-destructive">*</span></Label>
-              <Select value={form.student} onValueChange={(v) => setForm({ ...form, student: v })}>
-                <SelectTrigger><SelectValue placeholder="Select a student" /></SelectTrigger>
-                <SelectContent>
-                  {STUDENTS.map((s) => (
-                    <SelectItem key={s.name} value={s.name}>{s.name} — {s.className}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs font-medium text-foreground/80">Student <span className="text-destructive">*</span></Label>
+              {students.length > 0 ? (
+                <Select value={form.student} onValueChange={(v) => setForm({ ...form, student: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select a student" /></SelectTrigger>
+                  <SelectContent>
+                    {students.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name} — {s.className}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={form.student}
+                  onChange={(e) => setForm({ ...form, student: e.target.value })}
+                  placeholder="Student ID"
+                />
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -344,8 +504,9 @@ function FeesPage() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                <Receipt className="h-4 w-4" /> Record Payment
+              <Button type="submit" disabled={saving} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                Record Payment
               </Button>
             </DialogFooter>
           </form>
@@ -354,6 +515,3 @@ function FeesPage() {
     </AppShell>
   );
 }
-
-// keep CLASSES exported as part of the module for potential reuse
-void CLASSES;
