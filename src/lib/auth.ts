@@ -148,9 +148,9 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
+  // Never clear the session or redirect on API errors here. Callers are
+  // responsible for handling non-OK responses (including 401) by showing an
+  // empty/error state on their page instead of bouncing the user away.
   const res = await fetch(url, { ...init, headers });
-  if (res.status === 401) {
-    setSession(null);
-  }
   return res;
 }
