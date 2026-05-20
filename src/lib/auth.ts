@@ -20,6 +20,19 @@ export type Session = {
   refresh?: string;
 };
 
+type LoginPayload = Record<string, unknown> & {
+  access?: unknown;
+  access_token?: unknown;
+  token?: unknown;
+  key?: unknown;
+  refresh?: unknown;
+  refresh_token?: unknown;
+  user?: unknown;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 const listeners = new Set<() => void>();
 let cachedRaw: string | null = null;
 let cachedSession: Session | null = null;
@@ -45,7 +58,11 @@ export function getSession(): Session | null {
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  if (token) return token;
+
+  // Backward-compatible fallback for sessions created before termly.token existed.
+  return getSession()?.token ?? null;
 }
 
 export function getRefreshToken(): string | null {
@@ -87,9 +104,10 @@ export async function login(username: string, password: string): Promise<Session
     body: JSON.stringify({ username, password }),
   });
 
-  let payload: any = null;
+  let payload: LoginPayload | null = null;
   try {
-    payload = await res.json();
+    const json = await res.json();
+    payload = isRecord(json) ? json : null;
   } catch {
     // ignore
   }
@@ -99,18 +117,27 @@ export async function login(username: string, password: string): Promise<Session
       payload?.error ||
       payload?.detail ||
       payload?.message ||
-      (typeof payload === "object" && payload
-        ? Object.values(payload).flat().join(" ")
-        : null) ||
+      (payload ? Object.values(payload).flat().join(" ") : null) ||
       `Login failed (${res.status})`;
     throw new Error(typeof message === "string" ? message : "Login failed");
   }
 
-  const token = payload?.access ?? payload?.access_token ?? payload?.token ?? payload?.key;
-  const refresh = payload?.refresh ?? payload?.refresh_token;
+  const tokenValue = payload?.access ?? payload?.access_token ?? payload?.token ?? payload?.key;
+  const refreshValue = payload?.refresh ?? payload?.refresh_token;
+  const token = typeof tokenValue === "string" ? tokenValue : null;
+  const refresh = typeof refreshValue === "string" ? refreshValue : undefined;
   // User fields may be nested under `user` or returned at the top level.
-  const { access, access_token, token: _t, key, refresh: _r, refresh_token, user: nestedUser, ...rest } = payload ?? {};
-  const user = { ...(rest as object), ...(nestedUser ?? {}) };
+  const {
+    access,
+    access_token,
+    token: _t,
+    key,
+    refresh: _r,
+    refresh_token,
+    user: nestedUser,
+    ...rest
+  } = payload ?? {};
+  const user = { ...rest, ...(isRecord(nestedUser) ? nestedUser : {}) };
 
   if (!token) {
     throw new Error("Login response did not include an access token.");
@@ -135,7 +162,9 @@ export function logout() {
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const url = input.startsWith("http") ? input : `${API_BASE_URL}${input}`;
-  const token = getToken();
+  const token = getToken()
+    ?.replace(/^Bearer\s+/i, "")
+    .trim();
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (
@@ -145,7 +174,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   ) {
     headers.set("Content-Type", "application/json");
   }
-  if (token && !headers.has("Authorization")) {
+  if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   // Never clear the session or redirect on API errors here. Callers are
