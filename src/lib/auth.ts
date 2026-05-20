@@ -45,7 +45,11 @@ export function getSession(): Session | null {
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  if (token) return token;
+
+  // Backward-compatible fallback for sessions created before termly.token existed.
+  return getSession()?.token ?? null;
 }
 
 export function getRefreshToken(): string | null {
@@ -135,7 +139,7 @@ export function logout() {
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const url = input.startsWith("http") ? input : `${API_BASE_URL}${input}`;
-  const token = getToken();
+  const token = getToken()?.replace(/^Bearer\s+/i, "").trim();
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (
@@ -145,7 +149,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   ) {
     headers.set("Content-Type", "application/json");
   }
-  if (token && !headers.has("Authorization")) {
+  if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   // Never clear the session or redirect on API errors here. Callers are
