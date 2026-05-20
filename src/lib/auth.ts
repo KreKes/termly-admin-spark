@@ -122,11 +122,22 @@ export async function login(username: string, password: string): Promise<Session
     throw new Error(typeof message === "string" ? message : "Login failed");
   }
 
-  const token = payload?.access ?? payload?.access_token ?? payload?.token ?? payload?.key;
-  const refresh = payload?.refresh ?? payload?.refresh_token;
+  const tokenValue = payload?.access ?? payload?.access_token ?? payload?.token ?? payload?.key;
+  const refreshValue = payload?.refresh ?? payload?.refresh_token;
+  const token = typeof tokenValue === "string" ? tokenValue : null;
+  const refresh = typeof refreshValue === "string" ? refreshValue : undefined;
   // User fields may be nested under `user` or returned at the top level.
-  const { access, access_token, token: _t, key, refresh: _r, refresh_token, user: nestedUser, ...rest } = payload ?? {};
-  const user = { ...(rest as object), ...(nestedUser ?? {}) };
+  const {
+    access,
+    access_token,
+    token: _t,
+    key,
+    refresh: _r,
+    refresh_token,
+    user: nestedUser,
+    ...rest
+  } = payload ?? {};
+  const user = { ...rest, ...(isRecord(nestedUser) ? nestedUser : {}) };
 
   if (!token) {
     throw new Error("Login response did not include an access token.");
@@ -151,7 +162,9 @@ export function logout() {
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const url = input.startsWith("http") ? input : `${API_BASE_URL}${input}`;
-  const token = getToken()?.replace(/^Bearer\s+/i, "").trim();
+  const token = getToken()
+    ?.replace(/^Bearer\s+/i, "")
+    .trim();
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (
