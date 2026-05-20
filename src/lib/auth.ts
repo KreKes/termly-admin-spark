@@ -20,6 +20,19 @@ export type Session = {
   refresh?: string;
 };
 
+type LoginPayload = Record<string, unknown> & {
+  access?: unknown;
+  access_token?: unknown;
+  token?: unknown;
+  key?: unknown;
+  refresh?: unknown;
+  refresh_token?: unknown;
+  user?: unknown;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 const listeners = new Set<() => void>();
 let cachedRaw: string | null = null;
 let cachedSession: Session | null = null;
@@ -91,9 +104,10 @@ export async function login(username: string, password: string): Promise<Session
     body: JSON.stringify({ username, password }),
   });
 
-  let payload: any = null;
+  let payload: LoginPayload | null = null;
   try {
-    payload = await res.json();
+    const json = await res.json();
+    payload = isRecord(json) ? json : null;
   } catch {
     // ignore
   }
@@ -103,9 +117,7 @@ export async function login(username: string, password: string): Promise<Session
       payload?.error ||
       payload?.detail ||
       payload?.message ||
-      (typeof payload === "object" && payload
-        ? Object.values(payload).flat().join(" ")
-        : null) ||
+      (payload ? Object.values(payload).flat().join(" ") : null) ||
       `Login failed (${res.status})`;
     throw new Error(typeof message === "string" ? message : "Login failed");
   }
