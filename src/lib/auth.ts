@@ -65,6 +65,47 @@ export function getToken(): string | null {
   return getSession()?.token ?? null;
 }
 
+/**
+ * Decode a JWT and return its `exp` claim (seconds), or null if absent/invalid.
+ */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+    const json =
+      typeof atob === "function"
+        ? atob(padded)
+        : Buffer.from(padded, "base64").toString("utf-8");
+    const decoded = JSON.parse(json) as { exp?: unknown };
+    return typeof decoded.exp === "number" ? decoded.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isTokenExpired(token?: string | null): boolean {
+  const t = token ?? getToken();
+  if (!t) return false;
+  const exp = getTokenExpiry(t);
+  if (exp === null) return false;
+  // 5s skew so calls don't fire right at the boundary.
+  return Date.now() / 1000 >= exp - 5;
+}
+
+/**
+ * Clear the session and send the user to the login page. Safe to call from
+ * anywhere; no-ops on the server and avoids redirect loops on /login.
+ */
+export function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  setSession(null);
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+}
+
 export function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(REFRESH_KEY);
