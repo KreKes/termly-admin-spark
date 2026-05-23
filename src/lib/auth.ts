@@ -206,6 +206,19 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   const token = getToken()
     ?.replace(/^Bearer\s+/i, "")
     .trim();
+
+  // No token — bounce to login before making the request.
+  if (!token) {
+    redirectToLogin();
+    throw new Error("Not authenticated. Please sign in.");
+  }
+
+  // Proactively redirect if the token is expired.
+  if (isTokenExpired(token)) {
+    redirectToLogin();
+    throw new Error("Session expired. Please sign in again.");
+  }
+
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (
@@ -215,14 +228,8 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   ) {
     headers.set("Content-Type", "application/json");
   }
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  // Proactively redirect if token is expired before firing the request.
-  if (token && isTokenExpired(token)) {
-    redirectToLogin();
-    throw new Error("Session expired. Please sign in again.");
-  }
+  headers.set("Authorization", `Bearer ${token}`);
+
   const res = await fetch(url, { ...init, headers });
   if (res.status === 401) {
     redirectToLogin();

@@ -29,6 +29,24 @@ export const Route = createFileRoute("/results")({
     ],
   }),
   component: ResultsPage,
+  errorComponent: ({ error }) => (
+    <AppShell>
+      <div className="max-w-3xl mx-auto">
+        <Card className="border-border/70 shadow-sm">
+          <CardContent className="p-12 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="h-14 w-14 rounded-full bg-muted text-muted-foreground grid place-items-center">
+              <FileBarChart className="h-7 w-7" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">No results to display</h2>
+            <p className="text-sm text-muted-foreground max-w-sm">
+              {error instanceof Error ? error.message : "We couldn't load results right now."}
+            </p>
+            <Button variant="outline" onClick={() => window.location.reload()}>Try again</Button>
+          </CardContent>
+        </Card>
+      </div>
+    </AppShell>
+  ),
 });
 
 const TERMS = ["Term 1, 2025/26", "Term 2, 2025/26", "Term 3, 2025/26"];
